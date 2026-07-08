@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: mawer-tg-bot
+    runtime: node
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: XUI_BASE_URL
+        sync: false
+      - key: XUI_USERNAME
+        sync: false
+      - key: XUI_PASSWORD
+        sync: false
+      - key: XUI_INBOUND_ID
+        value: "1"
+      - key: XUI_PUBLIC_HOST
+        sync: false
+      - key: XUI_PUBLIC_PORT
+        value: "443"
+      - key: NODE_VERSION
+        value: "22.23.1"
