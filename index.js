@@ -201,27 +201,41 @@ bot.catch((err) => {
   console.error("BOT ERROR:", err.message, err.stack);
 });
 
+
 const app = express();
 
 app.get("/", (req, res) => {
   res.send("MAWER VPN bot is running");
 });
 
-const webhookPath = `/bot${BOT_TOKEN}`;
+const webhookPath = "/telegram-webhook";
 app.use(bot.webhookCallback(webhookPath));
 
-app.listen(PORT, async () => {
-  const fullWebhookUrl = `${WEBHOOK_URL}${webhookPath}`;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
-  try {
-    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    await bot.telegram.setWebhook(fullWebhookUrl, {
-      drop_pending_updates: true
-    });
+async function setupWebhook() {
+  const baseUrl = WEBHOOK_URL.replace(/\/$/, "");
+  const fullWebhookUrl = `${baseUrl}${webhookPath}`;
 
-    console.log("MAWER VPN bot started with webhook:", fullWebhookUrl);
-  } catch (err) {
-    console.error("WEBHOOK START ERROR:", err.message, err.stack);
-    process.exit(1);
+  while (true) {
+    try {
+      await bot.telegram.setWebhook(fullWebhookUrl, {
+        drop_pending_updates: true
+      });
+
+      console.log("MAWER VPN bot started with webhook:", fullWebhookUrl);
+      break;
+    } catch (err) {
+      console.error("WEBHOOK SET ERROR:", err.message);
+      console.error("Retrying webhook in 10 seconds...");
+      await sleep(10000);
+    }
   }
+}
+
+app.listen(PORT, () => {
+  console.log("Server listening on port", PORT);
+  setupWebhook();
 });
