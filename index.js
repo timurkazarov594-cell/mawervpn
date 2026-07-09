@@ -2,12 +2,10 @@ const http = require("http");
 const axios = require("axios");
 const { Telegraf, Markup } = require("telegraf");
 
-const {
-  BOT_TOKEN,
-  PROVISION_API_URL,
-  PROVISION_SECRET,
-  PORT
-} = process.env;
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const PROVISION_API_URL = process.env.PROVISION_API_URL;
+const PROVISION_SECRET = process.env.PROVISION_SECRET;
+const PORT = process.env.PORT || 10000;
 
 if (!BOT_TOKEN) throw new Error("BOT_TOKEN is missing");
 if (!PROVISION_API_URL) throw new Error("PROVISION_API_URL is missing");
@@ -16,8 +14,8 @@ if (!PROVISION_SECRET) throw new Error("PROVISION_SECRET is missing");
 http.createServer((req, res) => {
   res.writeHead(200, { "Content-Type": "text/plain" });
   res.end("MAWER Telegram bot is running");
-}).listen(PORT || 10000, () => {
-  console.log("Health server listening on port", PORT || 10000);
+}).listen(PORT, () => {
+  console.log("Health server listening on port", PORT);
 });
 
 const bot = new Telegraf(BOT_TOKEN);
@@ -40,11 +38,16 @@ function tariffMenu() {
 }
 
 async function getUserLink(telegramUserId) {
-  const url = ${PROVISION_API_URL}?secret=${encodeURIComponent(PROVISION_SECRET)}&tg=${encodeURIComponent(telegramUserId)};
+  const url =
+    `${PROVISION_API_URL}?secret=${encodeURIComponent(PROVISION_SECRET)}&tg=${encodeURIComponent(telegramUserId)}`;
+
+  console.log("PROVISION REQUEST", url.replace(PROVISION_SECRET, "***"));
 
   const res = await axios.get(url, { timeout: 20000 });
 
-  if (!res.data  !res.data.ok  !res.data.link) {
+  console.log("PROVISION RESPONSE", res.status, res.data?.ok, res.data?.email);
+
+  if (!res.data || !res.data.ok || !res.data.link) {
     console.error("PROVISION API ERROR", res.status, res.data);
     throw new Error("Provision API failed");
   }
@@ -68,17 +71,13 @@ bot.hears(["1 месяц — 299 ₽", "3 месяца — 699 ₽", "6 меся
 
   try {
     const link = await getUserLink(ctx.from.id);
-
     await ctx.reply(
-      ✅ Подписка активирована\n\nВаш личный ключ для Happ:\n\n${link}\n\nИнструкция:\n1. Скопируйте ссылку\n2. Откройте Happ\n3. Нажмите +\n4. Вставьте ссылку\n5. Включите VPN,
+      `✅ Подписка активирована\n\nВаш личный ключ для Happ:\n\n${link}\n\nИнструкция:\n1. Скопируйте ссылку\n2. Откройте Happ\n3. Нажмите +\n4. Вставьте ссылку\n5. Включите VPN`,
       mainMenu()
     );
   } catch (e) {
     console.error("CREATE ACCESS ERROR", e.message, e.stack);
-    await ctx.reply(
-      "❌ Не удалось создать доступ. Попробуйте позже или напишите в поддержку.",
-      mainMenu()
-    );
+    await ctx.reply("❌ Не удалось создать доступ. Попробуйте позже или напишите в поддержку.", mainMenu());
   }
 });
 
@@ -87,17 +86,10 @@ bot.hears("🔑 Мой ключ", async (ctx) => {
 
   try {
     const link = await getUserLink(ctx.from.id);
-
-    await ctx.reply(
-      🔑 Ваш личный ключ для Happ:\n\n${link},
-      mainMenu()
-    );
+    await ctx.reply(`🔑 Ваш личный ключ для Happ:\n\n${link}`, mainMenu());
   } catch (e) {
     console.error("MY KEY ERROR", e.message, e.stack);
-    await ctx.reply(
-      "❌ У вас пока нет активного доступа. Нажмите Купить VPN.",
-      mainMenu()
-    );
+    await ctx.reply("❌ У вас пока нет активного доступа. Нажмите Купить VPN.", mainMenu());
   }
 });
 
@@ -114,7 +106,7 @@ bot.catch((err) => {
 });
 
 bot.launch({ dropPendingUpdates: true }).then(() => {
-  console.log("MAWER bot launched");
+  console.log("MAWER bot launched with PROVISION API");
 });
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
