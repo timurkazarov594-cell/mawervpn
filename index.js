@@ -3,15 +3,19 @@ const axios = require("axios");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const express = require("express");
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const PROVISION_API_URL = process.env.PROVISION_API_URL;
 const PROVISION_SECRET = process.env.PROVISION_SECRET;
 const PAYMENT_PROVIDER_TOKEN = process.env.PAYMENT_PROVIDER_TOKEN || "";
+const PORT = process.env.PORT || 3000;
+const WEBHOOK_URL = process.env.WEBHOOK_URL || process.env.RENDER_EXTERNAL_URL;
 
 if (!BOT_TOKEN) throw new Error("BOT_TOKEN is missing");
 if (!PROVISION_API_URL) throw new Error("PROVISION_API_URL is missing");
 if (!PROVISION_SECRET) throw new Error("PROVISION_SECRET is missing");
+if (!WEBHOOK_URL) throw new Error("WEBHOOK_URL or RENDER_EXTERNAL_URL is missing");
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -78,13 +82,11 @@ async function getWireGuardConfig(tgId) {
 }
 
 async function sendWireGuardFile(ctx) {
-  const tgId = ctx.from.id;
-
   await ctx.reply("⏳ Создаём ваш VPN-файл...");
 
-  const config = await getWireGuardConfig(tgId);
+  const config = await getWireGuardConfig(ctx.from.id);
+  const filePath = path.join(os.tmpdir(), `MAWER-${ctx.from.id}.conf`);
 
-  const filePath = path.join(os.tmpdir(), `MAWER-${tgId}.conf`);
   fs.writeFileSync(filePath, config, "utf8");
 
   await ctx.replyWithDocument(
@@ -135,7 +137,7 @@ bot.hears(Object.keys(tariffs), async (ctx) => {
 
   if (!PAYMENT_PROVIDER_TOKEN) {
     await ctx.reply(
-      "⚠️ Оплата ещё не подключена в переменных Render.\n\n" +
+      "⚠️ Оплата ещё не подключена.\n\n" +
       "Для теста нажмите «🔑 Мой ключ», чтобы получить VPN-файл.",
       mainMenu()
     );
@@ -172,7 +174,7 @@ bot.on("successful_payment", async (ctx) => {
   } catch (e) {
     console.error("SEND WG FILE AFTER PAYMENT ERROR:", e.message, e.stack);
     await ctx.reply(
-      "✅ Оплата прошла, но файл не создался автоматически. Напишите в поддержку, мы выдадим доступ вручную.",
+      "✅ Оплата прошла, но файл не создался автоматически. Напишите в поддержку.",
       mainMenu()
     );
   }
@@ -183,37 +185,43 @@ bot.hears("🔑 Мой ключ", async (ctx) => {
     await sendWireGuardFile(ctx);
   } catch (e) {
     console.error("SEND WG FILE ERROR:", e.message, e.stack);
-    await ctx.reply(
-      "❌ Не получилось создать VPN-файл. Напишите в поддержку.",
-      mainMenu()
-    );
+    await ctx.reply("❌ Не получилось создать VPN-файл. Напишите в поддержку.", mainMenu());
   }
 });
 
 bot.hears("💬 Поддержка", async (ctx) => {
   await ctx.reply(
     "💬 Поддержка MAWER VPN:\n\n" +
-    "Напишите сюда, если VPN не подключается или файл не открывается.",
+    "Если VPN не подключается или файл не открывается — напишите сюда.",
     mainMenu()
   );
 });
 
-bot.catch((err, ctx) => {
+bot.catch((err) => {
   console.error("BOT ERROR:", err.message, err.stack);
 });
 
-async function startBot() {
+const app = express();
+
+app.get("/", (req, res) => {
+  res.send("MAWER VPN bot is running");
+});
+
+const webhookPath = `/bot${BOT_TOKEN}`;
+app.use(bot.webhookCallback(webhookPath));
+
+app.listen(PORT, async () => {
+  const fullWebhookUrl = `${WEBHOOK_URL}${webhookPath}`;
+
   try {
     await bot.telegram.deleteWebhook({ drop_pending_updates: true });
-    await bot.launch({ dropPendingUpdates: true });
-    console.log("MAWER VPN bot started");
+    await bot.telegram.setWebhook(fullWebhookUrl, {
+      drop_pending_updates: true
+    });
+
+    console.log("MAWER VPN bot started with webhook:", fullWebhookUrl);
   } catch (err) {
-    console.error("BOT LAUNCH ERROR:", err.message, err.stack);
+    console.error("WEBHOOK START ERROR:", err.message, err.stack);
     process.exit(1);
   }
-}
-
-startBot();
-
-process.once("SIGINT", () => bot.stop("SIGINT"));
-process.once("SIGTERM", () => bot.stop("SIGTERM"));
+});
