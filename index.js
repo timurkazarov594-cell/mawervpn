@@ -1,22 +1,17 @@
-const http = require("http");
-const axios = require("axios");
 const { Telegraf, Markup } = require("telegraf");
+const axios = require("axios");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const PROVISION_API_URL = process.env.PROVISION_API_URL;
 const PROVISION_SECRET = process.env.PROVISION_SECRET;
-const PORT = process.env.PORT || 10000;
+const PAYMENT_PROVIDER_TOKEN = process.env.PAYMENT_PROVIDER_TOKEN || "";
 
 if (!BOT_TOKEN) throw new Error("BOT_TOKEN is missing");
 if (!PROVISION_API_URL) throw new Error("PROVISION_API_URL is missing");
 if (!PROVISION_SECRET) throw new Error("PROVISION_SECRET is missing");
-
-http.createServer((req, res) => {
-  res.writeHead(200, { "Content-Type": "text/plain" });
-  res.end("MAWER Telegram bot is running");
-}).listen(PORT, () => {
-  console.log("Health server listening on port", PORT);
-});
 
 const bot = new Telegraf(BOT_TOKEN);
 
@@ -28,86 +23,188 @@ function mainMenu() {
   ]).resize();
 }
 
-function tariffMenu() {
+function tariffsMenu() {
   return Markup.keyboard([
     ["1 месяц — 299 ₽"],
     ["3 месяца — 699 ₽"],
     ["6 месяцев — 1 299 ₽"],
-    ["◀ Назад"]
+    ["⬅️ Назад"]
   ]).resize();
 }
 
-async function getUserLink(telegramUserId) {
-  const url =
-    `${PROVISION_API_URL}?secret=${encodeURIComponent(PROVISION_SECRET)}&tg=${encodeURIComponent(telegramUserId)}`;
+const tariffs = {
+  "1 месяц — 299 ₽": {
+    title: "MAWER VPN — 1 месяц",
+    description: "Доступ к MAWER VPN на 1 месяц",
+    payload: "mawer_1_month",
+    amount: 29900
+  },
+  "3 месяца — 699 ₽": {
+    title: "MAWER VPN — 3 месяца",
+    description: "Доступ к MAWER VPN на 3 месяца",
+    payload: "mawer_3_months",
+    amount: 69900
+  },
+  "6 месяцев — 1 299 ₽": {
+    title: "MAWER VPN — 6 месяцев",
+    description: "Доступ к MAWER VPN на 6 месяцев",
+    payload: "mawer_6_months",
+    amount: 129900
+  }
+};
 
-  console.log("PROVISION REQUEST", url.replace(PROVISION_SECRET, "***"));
+async function getWireGuardConfig(tgId) {
+  const res = await axios.get(PROVISION_API_URL, {
+    params: {
+      secret: PROVISION_SECRET,
+      tg: String(tgId)
+    },
+    timeout: 15000
+  });
 
-  const res = await axios.get(url, { timeout: 20000 });
+  const data = res.data;
 
-  console.log("PROVISION RESPONSE", res.status, res.data?.ok, res.data?.email);
-
-  if (!res.data || !res.data.ok || !res.data.link) {
-    console.error("PROVISION API ERROR", res.status, res.data);
-    throw new Error("Provision API failed");
+  if (!data || !data.ok) {
+    throw new Error(data?.error || "Provision API error");
   }
 
-  return res.data.link;
+  const config = data.link || data.config || "";
+
+  if (!config.includes("[Interface]") || !config.includes("[Peer]")) {
+    throw new Error("API вернул не WireGuard-конфиг");
+  }
+
+  return config.trim() + "\n";
+}
+
+async function sendWireGuardFile(ctx) {
+  const tgId = ctx.from.id;
+
+  await ctx.reply("⏳ Создаём ваш VPN-файл...");
+
+  const config = await getWireGuardConfig(tgId);
+
+  const filePath = path.join(os.tmpdir(), `MAWER-${tgId}.conf`);
+  fs.writeFileSync(filePath, config, "utf8");
+
+  await ctx.replyWithDocument(
+    {
+      source: filePath,
+      filename: "MAWER.conf"
+    },
+    {
+      caption:
+        "🔑 Ваш личный VPN-файл MAWER.conf\n\n" +
+        "Инструкция:\n" +
+        "1. Скачайте приложение WireGuard\n" +
+        "2. Нажмите на файл MAWER.conf\n" +
+        "3. Выберите «Открыть в WireGuard»\n" +
+        "4. Нажмите «Добавить туннель»\n" +
+        "5. Включите VPN"
+    }
+  );
+
+  await ctx.reply(
+    "✅ Готово. Если файл не открывается сразу, сохраните его в «Файлы» и импортируйте вручную в WireGuard.",
+    mainMenu()
+  );
+
+  try {
+    fs.unlinkSync(filePath);
+  } catch (_) {}
 }
 
 bot.start(async (ctx) => {
   await ctx.reply(
-    "🛡 MAWER VPN\nЗащищённый VPN за 1 минуту\n\nВыберите действие:",
+    "👋 Добро пожаловать в MAWER VPN.\n\n" +
+    "После оплаты бот выдаст вам файл MAWER.conf для приложения WireGuard.",
     mainMenu()
   );
 });
 
-bot.hears("🛒 Купить VPN", async (ctx) => {
-  await ctx.reply("🛒 Тарифы MAWER VPN\n\nВыберите тариф:", tariffMenu());
+bot.hears("⬅️ Назад", async (ctx) => {
+  await ctx.reply("Главное меню:", mainMenu());
 });
 
-bot.hears(["1 месяц — 299 ₽", "3 месяца — 699 ₽", "6 месяцев — 1 299 ₽"], async (ctx) => {
-  await ctx.reply("⏳ Создаём ваш личный VPN-доступ...");
+bot.hears("🛒 Купить VPN", async (ctx) => {
+  await ctx.reply("Выберите тариф:", tariffsMenu());
+});
 
-  try {
-    const link = await getUserLink(ctx.from.id);
+bot.hears(Object.keys(tariffs), async (ctx) => {
+  const tariff = tariffs[ctx.message.text];
+
+  if (!PAYMENT_PROVIDER_TOKEN) {
     await ctx.reply(
-      `✅ Подписка активирована\n\nВаш личный ключ для Happ:\n\n${link}\n\nИнструкция:\n1. Скопируйте ссылку\n2. Откройте Happ\n3. Нажмите +\n4. Вставьте ссылку\n5. Включите VPN`,
+      "⚠️ Оплата ещё не подключена в переменных Render.\n\n" +
+      "Для теста нажмите «🔑 Мой ключ», чтобы получить VPN-файл.",
       mainMenu()
     );
+    return;
+  }
+
+  await ctx.replyWithInvoice({
+    title: tariff.title,
+    description: tariff.description,
+    payload: tariff.payload,
+    provider_token: PAYMENT_PROVIDER_TOKEN,
+    currency: "RUB",
+    prices: [
+      {
+        label: tariff.title,
+        amount: tariff.amount
+      }
+    ],
+    need_email: false,
+    need_phone_number: false,
+    need_shipping_address: false,
+    is_flexible: false
+  });
+});
+
+bot.on("pre_checkout_query", async (ctx) => {
+  await ctx.answerPreCheckoutQuery(true);
+});
+
+bot.on("successful_payment", async (ctx) => {
+  try {
+    await ctx.reply("✅ Оплата прошла.");
+    await sendWireGuardFile(ctx);
   } catch (e) {
-    console.error("CREATE ACCESS ERROR", e.message, e.stack);
-    await ctx.reply("❌ Не удалось создать доступ. Попробуйте позже или напишите в поддержку.", mainMenu());
+    console.error("SEND WG FILE AFTER PAYMENT ERROR:", e.message, e.stack);
+    await ctx.reply(
+      "✅ Оплата прошла, но файл не создался автоматически. Напишите в поддержку, мы выдадим доступ вручную.",
+      mainMenu()
+    );
   }
 });
 
 bot.hears("🔑 Мой ключ", async (ctx) => {
-  await ctx.reply("⏳ Получаем ваш ключ...");
-
   try {
-    const link = await getUserLink(ctx.from.id);
-    await ctx.reply(`🔑 Ваш личный ключ для Happ:\n\n${link}`, mainMenu());
+    await sendWireGuardFile(ctx);
   } catch (e) {
-    console.error("MY KEY ERROR", e.message, e.stack);
-    await ctx.reply("❌ У вас пока нет активного доступа. Нажмите Купить VPN.", mainMenu());
+    console.error("SEND WG FILE ERROR:", e.message, e.stack);
+    await ctx.reply(
+      "❌ Не получилось создать VPN-файл. Напишите в поддержку.",
+      mainMenu()
+    );
   }
 });
 
 bot.hears("💬 Поддержка", async (ctx) => {
-  await ctx.reply("💬 По всем вопросам: facemax1@mail.ru", mainMenu());
+  await ctx.reply(
+    "💬 Поддержка MAWER VPN:\n\n" +
+    "Напишите сюда, если VPN не подключается или файл не открывается.",
+    mainMenu()
+  );
 });
 
-bot.hears("◀ Назад", async (ctx) => {
-  await ctx.reply("Главное меню:", mainMenu());
+bot.catch((err, ctx) => {
+  console.error("BOT ERROR:", err.message, err.stack);
 });
 
-bot.catch((err) => {
-  console.error("BOT ERROR", err);
-});
+bot.launch();
 
-bot.launch({ dropPendingUpdates: true }).then(() => {
-  console.log("MAWER bot launched with PROVISION API");
-});
+console.log("MAWER VPN bot started");
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
