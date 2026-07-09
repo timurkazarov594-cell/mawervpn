@@ -202,9 +202,18 @@ bot.catch((err, ctx) => {
   console.error("BOT ERROR:", err.message, err.stack);
 });
 
-bot.launch();
+async function startBot() {
+  try {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: true });
+    await bot.launch({ dropPendingUpdates: true });
+    console.log("MAWER VPN bot started");
+  } catch (err) {
+    console.error("BOT LAUNCH ERROR:", err.message, err.stack);
+    process.exit(1);
+  }
+}
 
-console.log("MAWER VPN bot started");
+startBot();
 
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
