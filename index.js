@@ -347,10 +347,16 @@ bot.hears("🔑 Мой ключ", async (ctx) => {
 
 bot.hears("💬 Поддержка", async (ctx) => {
   await ctx.reply(
-    "💬 Поддержка MAWER VPN:\n\nЕсли VPN не подключается или файл не открывается — напишите сюда.",
+    "💬 Поддержка MAWER VPN:
+
+" +
+    "По всем вопросам пишите на почту:
+" +
+    "mawervpn@mail.ru",
     mainMenu()
   );
 });
+
 
 bot.catch((err) => {
   console.error("BOT ERROR:", err.message, err.stack);
