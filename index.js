@@ -346,15 +346,10 @@ bot.hears("🔑 Мой ключ", async (ctx) => {
 });
 
 bot.hears("💬 Поддержка", async (ctx) => {
-  await ctx.reply(
-    "💬 Поддержка MAWER VPN:
+  await ctx.reply(`💬 Поддержка MAWER VPN:
 
-" +
-    "По всем вопросам пишите на почту:
-" +
-    "mawervpn@mail.ru",
-    mainMenu()
-  );
+По всем вопросам пишите на почту:
+mawervpn@mail.ru`, mainMenu());
 });
 
 
