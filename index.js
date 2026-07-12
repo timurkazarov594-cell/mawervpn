@@ -135,6 +135,22 @@ async function createYooKassaPayment(tgId, tariff) {
   return res.data;
 }
 
+
+async function getYooKassaPayment(paymentId) {
+  const res = await axios.get(
+    `https://api.yookassa.ru/v3/payments/${paymentId}`,
+    {
+      auth: {
+        username: YOOKASSA_SHOP_ID,
+        password: YOOKASSA_SECRET_KEY
+      },
+      timeout: 20000
+    }
+  );
+
+  return res.data;
+}
+
 async function requestWireGuardConfig(tgId, days = null) {
   const params = {
     secret: PROVISION_SECRET,
@@ -211,6 +227,11 @@ bot.start(async (ctx) => {
   );
 });
 
+
+bot.command("id", async (ctx) => {
+  await ctx.reply(`Ваш Telegram ID: ${ctx.from.id}`);
+});
+
 bot.hears("⬅️ Назад", async (ctx) => {
   await ctx.reply("Главное меню:", mainMenu());
 });
@@ -235,7 +256,8 @@ bot.hears(Object.keys(tariffs), async (ctx) => {
       `💰 Цена: ${(tariff.amount / 100).toFixed(0)} ₽\n\n` +
       `Нажмите кнопку ниже, чтобы оплатить:`,
       Markup.inlineKeyboard([
-        [Markup.button.url("💳 Оплатить через ЮKassa", paymentUrl)]
+        [Markup.button.url("💳 Оплатить через ЮKassa", paymentUrl)],
+        [Markup.button.callback("✅ Я оплатил — проверить", `checkpay:${payment.id}`)]
       ])
     );
   } catch (e) {
@@ -244,6 +266,62 @@ bot.hears(Object.keys(tariffs), async (ctx) => {
       "❌ Не получилось создать оплату. Попробуйте позже или напишите в поддержку.",
       mainMenu()
     );
+  }
+});
+
+
+bot.action(/^checkpay:(.+)$/, async (ctx) => {
+  try {
+    const paymentId = ctx.match[1];
+
+    await ctx.answerCbQuery("Проверяем оплату...");
+
+    const payment = await getYooKassaPayment(paymentId);
+
+    if (payment.status !== "succeeded") {
+      await ctx.reply(
+        "⏳ Оплата ещё не подтверждена ЮKassa. Если вы только что оплатили, подождите 10–20 секунд и нажмите кнопку проверки ещё раз.",
+        mainMenu()
+      );
+      return;
+    }
+
+    const metadata = payment.metadata || {};
+    const tgId = String(metadata.tgId || "");
+    const days = Number(metadata.days || 0);
+
+    if (tgId !== String(ctx.from.id)) {
+      await ctx.reply("❌ Этот платёж создан не для вашего Telegram-аккаунта.", mainMenu());
+      return;
+    }
+
+    if (!days) {
+      await ctx.reply("❌ В платеже не найден срок тарифа. Напишите в поддержку.", mainMenu());
+      return;
+    }
+
+    const processed = loadProcessedPayments();
+
+    if (processed[payment.id]) {
+      await ctx.reply("✅ Эта оплата уже была активирована. Отправляю ваш файл ещё раз...");
+      await sendWireGuardFileToChat(ctx.from.id, null);
+      return;
+    }
+
+    await ctx.reply(`✅ Оплата найдена. Активируем подписку на ${days} дней...`);
+
+    await sendWireGuardFileToChat(ctx.from.id, days);
+
+    processed[payment.id] = {
+      tgId: ctx.from.id,
+      days,
+      paid_at: Date.now()
+    };
+
+    saveProcessedPayments(processed);
+  } catch (e) {
+    console.error("CHECK PAYMENT ERROR:", e.message, e.stack);
+    await ctx.reply("❌ Не получилось проверить оплату. Напишите в поддержку.", mainMenu());
   }
 });
 
