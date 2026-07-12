@@ -151,13 +151,14 @@ async function getYooKassaPayment(paymentId) {
   return res.data;
 }
 
-async function requestWireGuardConfig(tgId, days = null) {
+async function requestWireGuardConfig(tgId, days = null, paymentId = null) {
   const params = {
     secret: PROVISION_SECRET,
     tg: String(tgId)
   };
 
   if (days) params.days = String(days);
+  if (paymentId) params.payment_id = String(paymentId);
 
   const res = await axios.get(PROVISION_API_URL, {
     params,
@@ -167,8 +168,8 @@ async function requestWireGuardConfig(tgId, days = null) {
   return res.data;
 }
 
-async function sendWireGuardFileToChat(chatId, days = null) {
-  const data = await requestWireGuardConfig(chatId, days);
+async function sendWireGuardFileToChat(chatId, days = null, paymentId = null) {
+  const data = await requestWireGuardConfig(chatId, days, paymentId);
 
   if (!data || !data.ok) {
     throw new Error(data?.error || "Provision API error");
@@ -216,7 +217,7 @@ async function sendWireGuardFileToChat(chatId, days = null) {
 
 async function sendWireGuardFile(ctx, days = null) {
   await ctx.reply("⏳ Создаём ваш VPN-файл...");
-  await sendWireGuardFileToChat(ctx.from.id, days);
+  await sendWireGuardFileToChat(ctx.from.id, days, payment.id);
 }
 
 bot.start(async (ctx) => {
@@ -310,7 +311,7 @@ bot.action(/^checkpay:(.+)$/, async (ctx) => {
 
     await ctx.reply(`✅ Оплата найдена. Активируем подписку на ${days} дней...`);
 
-    await sendWireGuardFileToChat(ctx.from.id, days);
+    await sendWireGuardFileToChat(ctx.from.id, days, payment.id);
 
     processed[payment.id] = {
       tgId: ctx.from.id,
@@ -399,7 +400,7 @@ app.post("/yookassa-webhook", async (req, res) => {
       `✅ Оплата прошла.\n\nАктивируем подписку на ${days} дней и создаём VPN-файл...`
     );
 
-    await sendWireGuardFileToChat(tgId, days);
+    await sendWireGuardFileToChat(tgId, days, paymentId);
 
     processed[paymentId] = {
       tgId,
