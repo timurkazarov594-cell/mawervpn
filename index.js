@@ -42,7 +42,8 @@ function mainMenu() {
   return Markup.keyboard([
     ["🛒 Купить VPN"],
     ["🔑 Мой ключ"],
-    ["💬 Поддержка"]
+    ["📖 Инструкция"],
+      ["💬 Поддержка"]
   ]).resize();
 }
 
@@ -444,6 +445,24 @@ async function setupTelegramWebhook() {
     }
   }
 }
+
+
+bot.hears("📖 Инструкция", async (ctx) => {
+  await ctx.reply(`📖 Инструкция по подключению MAWER VPN:
+
+1. Скачайте приложение WireGuard
+2. После оплаты получите ваш личный VPN-файл MAWER.conf
+3. Нажмите на файл MAWER.conf
+4. Нажмите кнопку «Поделиться»
+5. Выберите «Открыть в WireGuard»
+6. Нажмите «Добавить туннель»
+7. Включите VPN
+
+✅ Готово! VPN подключён.
+
+Если возникли вопросы:
+mawervpn@mail.ru`);
+});
 
 app.listen(PORT, () => {
   console.log("Server listening on port", PORT);
