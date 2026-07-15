@@ -448,7 +448,8 @@ async function setupTelegramWebhook() {
 
 
 bot.hears("📖 Инструкция", async (ctx) => {
-  await ctx.reply(`📖 Инструкция по подключению MAWER VPN:
+  await ctx.reply(
+    `📖 Инструкция по подключению MAWER VPN:
 
 1. Скачайте приложение WireGuard
 2. После оплаты получите ваш личный VPN-файл MAWER.conf
@@ -461,7 +462,20 @@ bot.hears("📖 Инструкция", async (ctx) => {
 ✅ Готово! VPN подключён.
 
 Если возникли вопросы:
-mawervpn@mail.ru`);
+mawervpn@mail.ru`,
+    {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "📲 Скачать WireGuard",
+              url: "https://apps.apple.com/us/app/wireguard/id1441195209?l=ru"
+            }
+          ]
+        ]
+      }
+    }
+  );
 });
 
 app.listen(PORT, () => {
